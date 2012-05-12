@@ -161,7 +161,7 @@
 	<target name="war" depends="compile" description="Create the activemq broker war file.">
 		<!--Copy the required jar files-->
 		<copy todir="${app.lib.dir}">
-			<fileset dir="../lib">
+			<fileset dir="lib">
 				<include name="*.jar" />
 				<exclude name="servlet.jar" />
 			</fileset>
