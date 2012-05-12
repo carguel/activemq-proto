@@ -139,7 +139,7 @@
 		<path id="javac.classpath">
 			<pathelement path="${class.dir}" />
 			<pathelement path="conf" />
-			<fileset dir="../lib">
+			<fileset dir="lib">
 				<include name="**/*.jar" />
 			</fileset>
 		</path>
@@ -166,7 +166,7 @@
 				<exclude name="servlet.jar" />
 			</fileset>
 
-			<fileset dir="../lib/optional">
+			<fileset dir="lib/optional">
 				<include name="activemq-web*.jar" />
 				<include name="activemq-container*.jar" />
 				<include name="commons-bean*.jar" />

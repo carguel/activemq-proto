@@ -152,16 +152,14 @@ public class ProducerTool extends Thread {
 
     protected void sendLoop(Session session, MessageProducer producer) throws Exception {
 
+        String content = createMessageText(0);
+
         for (int i = 0; i < messageCount || messageCount == 0; i++) {
 
-            TextMessage message = session.createTextMessage(createMessageText(i));
+            TextMessage message = session.createTextMessage(content);
 
-            if (verbose) {
-                String msg = message.getText();
-                if (msg.length() > 50) {
-                    msg = msg.substring(0, 50) + "...";
-                }
-                System.out.println("[" + this.getName() + "] Sending message: '" + msg + "'");
+            if (i % 1000 == 0) {
+                System.out.println(" [x] " + i + " messages sent");
             }
 
             producer.send(message);

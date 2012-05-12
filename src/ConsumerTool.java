@@ -19,6 +19,10 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.Date;
+import java.util.Formatter;
+import java.util.Locale;
+
 
 import javax.jms.Connection;
 import javax.jms.DeliveryMode;
@@ -42,6 +46,13 @@ import org.apache.activemq.ActiveMQConnectionFactory;
  * @version $Revision: 1.1.1.1 $
  */
 public class ConsumerTool extends Thread implements MessageListener, ExceptionListener {
+
+    private int received_messages = 0;
+    private Thread startThread;
+    private Date firstMessageDate = null;
+    private int accumulatedSize = 0;
+    private Date lastMessageDate = null;
+
 
     private boolean running;
 
@@ -68,44 +79,47 @@ public class ConsumerTool extends Thread implements MessageListener, ExceptionLi
 
     public static void main(String[] args) {
         ArrayList<ConsumerTool> threads = new ArrayList();
-        ConsumerTool consumerTool = new ConsumerTool();
+        final ConsumerTool consumerTool = new ConsumerTool();
         String[] unknown = CommandLineSupport.setOptions(consumerTool, args);
         if (unknown.length > 0) {
             System.out.println("Unknown options: " + Arrays.toString(unknown));
             System.exit(-1);
         }
-        consumerTool.showParameters();
-        for (int threadCount = 1; threadCount <= parallelThreads; threadCount++) {
-            consumerTool = new ConsumerTool();
-            CommandLineSupport.setOptions(consumerTool, args);
-            consumerTool.start();
-            threads.add(consumerTool);
-        }
+        Runtime.getRuntime().addShutdownHook(new Thread() {
+            @Override
+            public synchronized void start() {
 
-        while (true) {
-            Iterator<ConsumerTool> itr = threads.iterator();
-            int running = 0;
-            while (itr.hasNext()) {
-                ConsumerTool thread = itr.next();
-                if (thread.isAlive()) {
-                    running++;
+                try {
+                System.out.println("Stopping");
+
+                try {
+                    Thread.sleep(1000l);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+
+                double receivingTime = consumerTool.getReceivingTime();
+                System.out.println("Exiting");
+                int receivedMessage = consumerTool.getReceivedMessages();
+                double receivedMegaByte = consumerTool.getMegaByteReceived();
+                double messagePerSecond = consumerTool.getMessagePerSecond();
+                double megaBytePersecond = consumerTool.getMegaBytePerSecond();
+                String message = "\n [*] Stopping :  %d messages /  %.3f MB received in %.3f seconds ( %.3f msg/s / %.3f MB/s)";
+                Formatter formatter = new Formatter(System.out);
+                formatter.format(Locale.ENGLISH, message, receivedMessage, receivedMegaByte, receivingTime, messagePerSecond, megaBytePersecond);
+                formatter.flush();
+                }
+                catch (Exception e) {
+                    e.printStackTrace();
                 }
             }
+        });
 
-            if (running <= 0) {
-                System.out.println("All threads completed their work");
-                break;
-            }
+        consumerTool.showParameters();
+        CommandLineSupport.setOptions(consumerTool, args);
+        consumerTool.start();
+        threads.add(consumerTool);
 
-            try {
-                Thread.sleep(1000);
-            } catch (Exception e) {
-            }
-        }
-        Iterator<ConsumerTool> itr = threads.iterator();
-        while (itr.hasNext()) {
-            ConsumerTool thread = itr.next();
-        }
     }
 
     public void showParameters() {
@@ -144,15 +158,7 @@ public class ConsumerTool extends Thread implements MessageListener, ExceptionLi
                 consumer = session.createConsumer(destination);
             }
 
-            if (maxiumMessages > 0) {
-                consumeMessagesAndClose(connection, session, consumer);
-            } else {
-                if (receiveTimeOut == 0) {
-                    consumer.setMessageListener(this);
-                } else {
-                    consumeMessagesAndClose(connection, session, consumer, receiveTimeOut);
-                }
-            }
+            consumer.setMessageListener(this);
 
         } catch (Exception e) {
             System.out.println("[" + this.getName() + "] Caught: " + e);
@@ -163,30 +169,23 @@ public class ConsumerTool extends Thread implements MessageListener, ExceptionLi
     public void onMessage(Message message) {
         try {
 
-            if (message instanceof TextMessage) {
-                TextMessage txtMsg = (TextMessage) message;
-                if (verbose) {
-
-                    String msg = txtMsg.getText();
-                    int length = msg.length();
-                    if (length > 50) {
-                        msg = msg.substring(0, 50) + "...";
-                    }
-                    System.out.println("[" + this.getName() + "] Received: '" + msg + "' (length " + length + ")");
-                }
-            } else {
-                if (verbose) {
-                    System.out.println("[" + this.getName() + "] Received: '" + message + "'");
-                }
+            if (firstMessageDate == null) {
+                firstMessageDate = new Date();
             }
 
-            if (message.getJMSReplyTo() != null) {
-                replyProducer.send(message.getJMSReplyTo(), session.createTextMessage("Reply: " + message.getJMSMessageID()));
+            TextMessage txtMsg = (TextMessage) message;
+            String msg = txtMsg.getText();
+
+            received_messages++;
+            accumulatedSize += msg.length();
+            lastMessageDate = new Date();
+
+            if (received_messages % 1000 == 0) {
+                System.out.println(" [x] " + received_messages + " messages received");
             }
 
-            if (transacted) {
-                session.commit();
-            } else if (ackMode == Session.CLIENT_ACKNOWLEDGE) {
+
+            if (ackMode == Session.CLIENT_ACKNOWLEDGE) {
                 message.acknowledge();
             }
 
@@ -335,4 +334,26 @@ public class ConsumerTool extends Thread implements MessageListener, ExceptionLi
     public void setVerbose(boolean verbose) {
         this.verbose = verbose;
     }
+
+    protected double getMegaBytePerSecond() {
+        System.out.println("toto");
+        return  getMegaByteReceived() / getReceivingTime();
+    }
+
+    protected double getMessagePerSecond() {
+        return (double)(getReceivedMessages() / getReceivingTime());
+    }
+
+    protected int getReceivedMessages() {
+        return received_messages;
+    }
+
+    protected double getReceivingTime() {
+        return (lastMessageDate.getTime() - firstMessageDate.getTime()) / 1000.0;
+    }
+
+    protected double getMegaByteReceived() {
+        return accumulatedSize / 1000.0 / 1000.0;
+    }
+
 }
